@@ -1236,4 +1236,250 @@ struct JSONSchemaTests {
             Issue.record("Decoded literal schema should be an object schema")
         }
     }
+
+    @Test func testJSONSchemaRoundTrip() throws {
+        // Array of test schemas covering all types and features
+        let testSchemas: [JSONSchema] = [
+            // Basic types
+            .null,
+            .any,
+            .empty,
+            .boolean(),
+            .boolean(title: "Is Active", description: "User active status", default: true),
+
+            // String schemas with various properties
+            .string(),
+            .string(
+                title: "Username",
+                description: "User's username",
+                default: "guest",
+                examples: ["alice", "bob", "charlie"],
+                enum: ["admin", "user", "guest"],
+                const: "fixed_value",
+                minLength: 3,
+                maxLength: 50,
+                pattern: "^[a-zA-Z0-9_]+$",
+                format: .email
+            ),
+
+            // Number schemas
+            .number(),
+            .number(
+                title: "Temperature",
+                description: "Temperature reading",
+                default: 20.5,
+                examples: [15, 25, 30],
+                enum: [0, 50, 100],
+                const: 37.5,
+                minimum: -273.15,
+                maximum: 1000,
+                exclusiveMinimum: -273.15,
+                exclusiveMaximum: 1000,
+                multipleOf: 0.5
+            ),
+
+            // Integer schemas
+            .integer(),
+            .integer(
+                title: "Age",
+                description: "Person's age",
+                default: 30,
+                examples: [18, 25, 65],
+                enum: [18, 21, 65],
+                const: 42,
+                minimum: 0,
+                maximum: 150,
+                exclusiveMinimum: 0,
+                exclusiveMaximum: 150,
+                multipleOf: 1
+            ),
+
+            // Array schemas
+            .array(),
+            .array(
+                title: "Tags",
+                description: "List of tags",
+                default: ["default", "tag"],
+                examples: [["tag1", "tag2"], ["tagA", "tagB"]],
+                enum: [["option1"], ["option2", "option3"]],
+                const: ["const1", "const2"],
+                items: .string(minLength: 1),
+                minItems: 0,
+                maxItems: 10,
+                uniqueItems: true
+            ),
+
+            // Object schemas
+            .object(),
+            .object(
+                title: "User",
+                description: "User object",
+                default: ["id": 1, "name": "Default User"],
+                examples: [["id": 2, "name": "Example User"]],
+                enum: [["type": "standard"], ["type": "premium"]],
+                const: ["type": "fixed"],
+                properties: [
+                    "id": .integer(minimum: 1),
+                    "name": .string(minLength: 1),
+                    "email": .string(format: .email),
+                    "tags": .array(items: .string()),
+                ],
+                required: ["id", "name"],
+                additionalProperties: .boolean(false)
+            ),
+
+            // Object with schema additional properties
+            .object(
+                properties: ["known": .string()],
+                additionalProperties: .schema(.number(minimum: 0))
+            ),
+
+            // Reference schema
+            .reference("#/definitions/User"),
+            .reference("#/components/schemas/Address"),
+
+            // Composite schemas
+            .anyOf([.string(), .number(), .boolean()]),
+            .allOf([
+                .object(properties: ["name": .string()]),
+                .object(properties: ["age": .integer()]),
+            ]),
+            .oneOf([
+                .object(properties: ["type": .string(const: "cat"), "meow": .boolean()]),
+                .object(properties: ["type": .string(const: "dog"), "bark": .boolean()]),
+            ]),
+            .not(.string(pattern: "^[0-9]+$")),
+
+            // Nested complex schema
+            .object(
+                title: "Company",
+                description: "Company with employees",
+                properties: [
+                    "name": .string(minLength: 1),
+                    "founded": .integer(minimum: 1800, maximum: 2100),
+                    "employees": .array(
+                        items: .object(
+                            properties: [
+                                "id": .integer(),
+                                "name": .string(),
+                                "role": .string(enum: ["developer", "manager", "designer"]),
+                                "skills": .array(items: .string(), minItems: 1),
+                                "contact": .oneOf([
+                                    .object(properties: [
+                                        "type": .string(const: "email"),
+                                        "value": .string(format: .email),
+                                    ]),
+                                    .object(properties: [
+                                        "type": .string(const: "phone"),
+                                        "value": .string(pattern: "^\\+?[0-9-]+$"),
+                                    ]),
+                                ]),
+                            ],
+                            required: ["id", "name", "role"]
+                        ),
+                        minItems: 1
+                    ),
+                    "address": .object(
+                        properties: [
+                            "street": .string(),
+                            "city": .string(),
+                            "country": .string(),
+                            "coordinates": .object(
+                                properties: [
+                                    "lat": .number(minimum: -90, maximum: 90),
+                                    "lng": .number(minimum: -180, maximum: 180),
+                                ],
+                                required: ["lat", "lng"]
+                            ),
+                        ],
+                        required: ["city", "country"]
+                    ),
+                ],
+                required: ["name", "founded", "employees"]
+            ),
+
+            // String with all formats
+            .string(format: .dateTime),
+            .string(format: .date),
+            .string(format: .time),
+            .string(format: .duration),
+            .string(format: .email),
+            .string(format: .idnEmail),
+            .string(format: .hostname),
+            .string(format: .idnHostname),
+            .string(format: .ipv4),
+            .string(format: .ipv6),
+            .string(format: .uri),
+            .string(format: .uriReference),
+            .string(format: .iriReference),
+            .string(format: .uriTemplate),
+            .string(format: .jsonPointer),
+            .string(format: .relativeJsonPointer),
+            .string(format: .regex),
+            .string(format: .uuid),
+            .string(format: .custom("custom-format")),
+
+            // Edge cases
+            .object(properties: [:]),  // Empty properties
+            .array(items: .array(items: .array(items: .string()))),  // Triple nested arrays
+            .anyOf([]),  // Empty anyOf (though this might be invalid in real use)
+            .allOf([.any]),  // Single item allOf
+            .oneOf([.empty]),  // Single item oneOf
+        ]
+
+        // Test each schema
+        for (index, originalSchema) in testSchemas.enumerated() {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+
+            // Encode to JSON
+            let encodedData = try encoder.encode(originalSchema)
+
+            // Decode back
+            let decoder = JSONDecoder()
+            let decodedSchema = try decoder.decode(JSONSchema.self, from: encodedData)
+
+            // Compare using our helper function
+            try assertJSONSchemaEquivalent(
+                decodedSchema,
+                originalSchema,
+                fileID: #fileID,
+                filePath: #filePath,
+                line: #line,
+                column: #column
+            )
+
+            // Also verify direct equality where applicable
+            #expect(
+                decodedSchema == originalSchema,
+                "Schema at index \(index) failed round-trip equality test"
+            )
+
+            // Double round-trip to ensure stability
+            let reEncodedData = try encoder.encode(decodedSchema)
+            let reDecodedSchema = try decoder.decode(JSONSchema.self, from: reEncodedData)
+
+            try assertJSONSchemaEquivalent(
+                reDecodedSchema,
+                decodedSchema,
+                fileID: #fileID,
+                filePath: #filePath,
+                line: #line,
+                column: #column
+            )
+
+            #expect(
+                reDecodedSchema == decodedSchema,
+                "Schema at index \(index) failed double round-trip equality test"
+            )
+
+            // Verify JSON strings are identical after sorting
+            let json1 = String(data: encodedData, encoding: .utf8)!
+            let json2 = String(data: reEncodedData, encoding: .utf8)!
+            #expect(
+                json1 == json2,
+                "Schema at index \(index) produced different JSON on re-encoding"
+            )
+        }
+    }
 }
